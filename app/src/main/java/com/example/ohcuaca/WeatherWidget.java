@@ -1,0 +1,130 @@
+package com.example.ohcuaca;
+
+import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProvider;
+import android.content.Context;
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.RemoteViews;
+import android.widget.TextView;
+
+import com.example.ohcuaca.Adapter.WeatherForecastAdapter;
+import com.example.ohcuaca.Common.Common;
+import com.example.ohcuaca.Model.WeatherForecastResult;
+import com.example.ohcuaca.Retrofit.IOpenWeatherMap;
+import com.example.ohcuaca.Retrofit.RetrofitClient;
+
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.CompositeDisposable;
+import io.reactivex.functions.Consumer;
+import io.reactivex.schedulers.Schedulers;
+import retrofit2.Retrofit;
+
+/**
+ * Implementation of App Widget functionality.
+ */
+public class WeatherWidget extends AppWidgetProvider {
+
+    CompositeDisposable compositeDisposable;
+    IOpenWeatherMap mService;
+
+    TextView txt_city_name,txt_geo_coord;
+    RecyclerView recycler_forecast;
+
+    static WeatherWidget instance;
+
+    public static WeatherWidget getInstance(){
+        if (instance == null)
+            instance = new WeatherWidget();
+        return instance;
+    }
+
+
+    public WeatherWidget() {
+        compositeDisposable = new CompositeDisposable();
+        Retrofit retrofit = RetrofitClient.getInstance();
+        mService = retrofit.create(IOpenWeatherMap.class);
+    }
+
+    public View updateAppWidget(Context context,LayoutInflater inflater,ViewGroup container, AppWidgetManager appWidgetManager,Bundle savedInstanceState
+                                ,int appWidgetId, WeatherForecastResult weatherForecastResult) {
+
+
+        // Construct the RemoteViews object
+        View itemView = inflater.inflate(R.layout.fragment_forecast, container, false);
+
+        txt_city_name = (TextView)itemView.findViewById(R.id.txt_city_name);
+        txt_geo_coord = (TextView)itemView.findViewById(R.id.txt_geo_coord);
+
+        recycler_forecast = (RecyclerView)itemView.findViewById(R.id.recycler_forecast);
+        recycler_forecast.setHasFixedSize(true);
+        recycler_forecast.setLayoutManager(new LinearLayoutManager(getContext(),LinearLayoutManager.HORIZONTAL,false));
+
+        getForecastWeatherInformation();
+
+        return itemView;
+
+
+        // Instruct the widget manager to update the widget
+        appWidgetManager.updateAppWidget(appWidgetId, views);
+    }
+
+    private void getForecastWeatherInformation() {
+        compositeDisposable.add(mService.getForecastWeatherByLatLng(
+                String.valueOf(Common.current_location.getLatitude()),
+                String.valueOf(Common.current_location.getLongitude()),
+                Common.APP_ID,
+                "metric")
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Consumer<WeatherForecastResult>() {
+                    @Override
+                    public void accept(WeatherForecastResult weatherForecastResult) throws Exception {
+                        displayForecastWeather(weatherForecastResult);
+
+                    }
+                }, new Consumer<Throwable>() {
+                    @Override
+                    public void accept(Throwable throwable) throws Exception {
+                        Log.d("ERROR",""+throwable.getMessage());
+
+                    }
+                })
+        );
+    }
+
+    private void displayForecastWeather(WeatherForecastResult weatherForecastResult) {
+        txt_city_name.setText(new StringBuilder(weatherForecastResult.city.name));
+        txt_geo_coord.setText(new StringBuilder(weatherForecastResult.city.coord.toString()));
+
+        WeatherForecastAdapter adapter = new WeatherForecastAdapter(getContext(),weatherForecastResult);
+        recycler_forecast.setAdapter(adapter);
+    }
+
+
+    @Override
+    public void onUpdate(Context context,LayoutInflater inflater,ViewGroup container, AppWidgetManager appWidgetManager,Bundle savedInstanceState
+            , WeatherForecastResult weatherForecastResult) {
+        // There may be multiple widgets active, so update all of them
+        for (int appWidgetId : appWidgetIds) {
+            updateAppWidget(context,inflater,container, appWidgetManager,savedInstanceState, appWidgetId,weatherForecastResult);
+        }
+    }
+
+    @Override
+    public void onEnabled(Context context) {
+        // Enter relevant functionality for when the first widget is created
+    }
+
+    @Override
+    public void onDisabled(Context context) {
+        // Enter relevant functionality for when the last widget is disabled
+    }
+}
+
